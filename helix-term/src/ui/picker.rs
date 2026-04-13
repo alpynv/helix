@@ -56,7 +56,6 @@ use self::handlers::{DynamicQueryChange, DynamicQueryHandler, PreviewHighlightHa
 
 pub const ID: &str = "picker";
 
-pub const MIN_AREA_WIDTH_FOR_PREVIEW: u16 = 72;
 /// Biggest file size to preview in bytes
 pub const MAX_FILE_SIZE_FOR_PREVIEW: u64 = 10 * 1024 * 1024;
 
@@ -1026,27 +1025,20 @@ impl<T: 'static + Send + Sync, D: 'static + Send + Sync> Picker<T, D> {
 
 impl<I: 'static + Send + Sync, D: 'static + Send + Sync> Component for Picker<I, D> {
     fn render(&mut self, area: Rect, surface: &mut Surface, cx: &mut Context) {
-        // +---------+ +---------+
-        // |prompt   | |preview  |
-        // +---------+ |         |
-        // |picker   | |         |
-        // |         | |         |
-        // +---------+ +---------+
+        let render_preview = self.show_preview && self.file_fn.is_some();
 
-        let render_preview =
-            self.show_preview && self.file_fn.is_some() && area.width > MIN_AREA_WIDTH_FOR_PREVIEW;
-
-        let picker_width = if render_preview {
-            area.width / 2
+        // TODO: Revisit layout split: this fixed 25/75 vertical split may be too aggressive in narrow/short views.
+        let picker_height = if render_preview {
+            (area.height / 2).max(1)
         } else {
-            area.width
+            area.height
         };
 
-        let picker_area = area.with_width(picker_width);
+        let picker_area = area.with_height(picker_height);
         self.render_picker(picker_area, surface, cx);
 
         if render_preview {
-            let preview_area = area.clip_left(picker_width);
+            let preview_area = area.clip_top(picker_height);
             self.render_preview(preview_area, surface, cx);
         }
     }
@@ -1169,24 +1161,18 @@ impl<I: 'static + Send + Sync, D: 'static + Send + Sync> Component for Picker<I,
 
     fn cursor(&self, area: Rect, editor: &Editor) -> (Option<Position>, CursorKind) {
         let block = Block::bordered();
-        // calculate the inner area inside the box
-        let inner = block.inner(area);
 
-        // prompt area
-        let render_preview =
-            self.show_preview && self.file_fn.is_some() && area.width > MIN_AREA_WIDTH_FOR_PREVIEW;
-
-        let picker_width = if render_preview {
-            area.width / 2
-        } else {
-            area.width
-        };
-        let area = inner.clip_left(1).with_height(1).with_width(picker_width);
+        let area = block
+            .inner(area)
+            .clip_left(1)
+            .with_height(1)
+            .with_width(area.width);
 
         self.prompt.cursor(area, editor)
     }
 
     fn required_size(&mut self, (width, height): (u16, u16)) -> Option<(u16, u16)> {
+        // TODO: Account for preview-enabled layout here so page_up/page_down match visible picker rows.
         self.completion_height = height.saturating_sub(4 + self.header_height());
         Some((width, height))
     }
